@@ -1,11 +1,8 @@
 require 'sidekiq'
-require 'activerecord-import'
-
-directory = File.dirname(File.absolute_path(__FILE__))
-require "#{directory}/client_ext.rb"
-Dir.glob("#{directory}/superworker/**/*.rb") { |file| require file }
-Dir.glob("#{directory}/../generators/sidekiq/superworker/**/*.rb") { |file| require file }
-Dir.glob("#{directory}/../../app/models/sidekiq/superworker/*.rb") { |file| require file }
+begin
+  require 'activerecord-import'
+rescue LoadError
+end
 
 module Sidekiq
   module Superworker
@@ -32,8 +29,22 @@ module Sidekiq
     def self.table_name_prefix
       'sidekiq_superworker_'
     end
+
+    def self.active_record?
+      defined?(ActiveRecord)
+    end
+
+    def self.mongoid?
+      defined?(Mongoid)
+    end
   end
 end
+
+directory = File.dirname(File.absolute_path(__FILE__))
+require "#{directory}/client_ext.rb"
+Dir.glob("#{directory}/superworker/**/*.rb") { |file| require file }
+Dir.glob("#{directory}/../../app/models/sidekiq/superworker/*.rb") { |file| require file }
+
 
 Sidekiq.configure_server do |config|
   config.server_middleware do |chain|
@@ -41,12 +52,11 @@ Sidekiq.configure_server do |config|
   end
 end
 
-Superworker = Sidekiq::Superworker::Worker unless Object.const_defined?('Superworker')
+Superworker = Sidekiq::Superworker::Worker unless defined?(Superworker)
 
 if defined?(Sidekiq::Monitor)
-
   # Make Cleaner ignore superjobs, as they don't exist in Redis and thus won't be synced with Sidekiq::Monitor::Job
-  Sidekiq::Monitor::Cleaner.add_ignored_queue(Sidekiq::Superworker::SuperjobProcessor.queue_name) if defined?(Sidekiq::Monitor)
+  Sidekiq::Monitor::Cleaner.add_ignored_queue(Sidekiq::Superworker::SuperjobProcessor.queue_name)
 
   # Add a custom view that shows the subjobs for a superjob
   custom_views_directory = "#{directory}/../../app/views/sidekiq/superworker/subjobs"
@@ -67,5 +77,4 @@ if defined?(Sidekiq::Monitor)
       records.where(jid: subjob_jids + [superjob_jid])
     end
   })
-
 end
